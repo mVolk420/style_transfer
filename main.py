@@ -2,10 +2,11 @@ import argparse
 import torch
 import torchvision.models as models
 import os
+import sys
 from utils import load_image, save_image
 from style_transfer import perform_style_transfer
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Neural Style Transfer')
     parser.add_argument('--content', type=str, required=True, help='Path to content image (in input/ folder)')
     parser.add_argument('--style', type=str, required=True, help='Path to style image or preset name')
@@ -14,6 +15,15 @@ def main():
     parser.add_argument('--imsize', type=int, default=512 if torch.cuda.is_available() or torch.backends.mps.is_available() else 128, help='Image size')
     
     args = parser.parse_args()
+
+    # Input validation
+    if args.steps <= 0:
+        print("Error: --steps must be a positive integer.")
+        sys.exit(1)
+    
+    if args.imsize <= 0:
+        print("Error: --imsize must be a positive integer.")
+        sys.exit(1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -27,7 +37,7 @@ def main():
     
     if not os.path.exists(content_path):
         print(f"Error: Content image not found at {content_path}")
-        return
+        sys.exit(1)
 
     # Check if style is a preset
     style_path = args.style
@@ -39,6 +49,10 @@ def main():
     elif os.path.exists(os.path.join("styles", f"{args.style}.png")):
         style_path = os.path.join("styles", f"{args.style}.png")
         style_name = args.style
+    
+    if not os.path.exists(style_path):
+        print(f"Error: Style image not found at {style_path}")
+        sys.exit(1)
 
     # Resolve output path
     if args.output is None:
@@ -48,19 +62,27 @@ def main():
     else:
         output_path = args.output
 
-    print(f"Loading content image: {content_path}")
-    content_img = load_image(content_path, image_size)
-    
-    # Resize style image to match content image dimensions
-    content_shape = (content_img.shape[2], content_img.shape[3])
-    
-    print(f"Loading style image: {style_path}")
-    style_img = load_image(style_path, image_size, shape=content_shape)
+    try:
+        print(f"Loading content image: {content_path}")
+        content_img = load_image(content_path, image_size)
+        
+        # Resize style image to match content image dimensions
+        content_shape = (content_img.shape[2], content_img.shape[3])
+        
+        print(f"Loading style image: {style_path}")
+        style_img = load_image(style_path, image_size, shape=content_shape)
+    except Exception as e:
+        print(f"Error loading images: {e}")
+        sys.exit(1)
     
     print(f"Output will be saved to: {output_path}")
 
     print("Loading VGG19 model...")
-    vgg_model = models.vgg19(pretrained=True).features.to(device).eval()
+    try:
+        vgg_model = models.vgg19(pretrained=True).features.to(device).eval()
+    except Exception as e:
+        print(f"Error loading VGG19 model: {e}")
+        sys.exit(1)
 
     # VGG networks are trained on images with each channel normalized by mean=[0.485, 0.456, 0.406] 
     # and std=[0.229, 0.224, 0.225].
@@ -72,11 +94,20 @@ def main():
     # input_img = torch.randn(content_img.data.size(), device=device)
 
     print("Starting Style Transfer...")
-    output = perform_style_transfer(vgg_model, norm_mean, norm_std,
-                                content_img, style_img, input_img, num_steps=args.steps)
+    try:
+        output = perform_style_transfer(vgg_model, norm_mean, norm_std,
+                                    content_img, style_img, input_img, num_steps=args.steps)
+    except Exception as e:
+        print(f"Error during style transfer: {e}")
+        sys.exit(1)
 
     print(f"Saving output to {output_path}")
-    save_image(output, output_path)
+    try:
+        save_image(output, output_path)
+    except Exception as e:
+        print(f"Error saving output image: {e}")
+        sys.exit(1)
+        
     print("Done!")
 
 if __name__ == '__main__':

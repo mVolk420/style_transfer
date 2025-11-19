@@ -4,9 +4,13 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.models as models
 import copy
+from typing import List, Tuple
 
 class ContentLoss(nn.Module):
-    def __init__(self, target,):
+    """
+    Calculates the content loss (MSE) between the input and target feature maps.
+    """
+    def __init__(self, target: torch.Tensor):
         super(ContentLoss, self).__init__()
         # we 'detach' the target content from the tree used
         # to dynamically compute the gradient: this is a stated value,
@@ -14,11 +18,20 @@ class ContentLoss(nn.Module):
         # will throw an error.
         self.target = target.detach()
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
         self.loss = F.mse_loss(input, self.target)
         return input
 
-def gram_matrix(input):
+def gram_matrix(input: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the Gram matrix of the input tensor.
+    
+    Args:
+        input (torch.Tensor): Input tensor of shape (batch_size, num_features, height, width).
+        
+    Returns:
+        torch.Tensor: Gram matrix of shape (batch_size, num_features, num_features).
+    """
     batch_size, num_features, height, width = input.size()  # a=batch size(=1)
     # b=number of feature maps
     # (c,d)=dimensions of a f. map (N=c*d)
@@ -32,17 +45,23 @@ def gram_matrix(input):
     return gram_product.div(batch_size * num_features * height * width)
 
 class StyleLoss(nn.Module):
-    def __init__(self, target_feature):
+    """
+    Calculates the style loss (MSE) between the Gram matrices of input and target feature maps.
+    """
+    def __init__(self, target_feature: torch.Tensor):
         super(StyleLoss, self).__init__()
         self.target = gram_matrix(target_feature).detach()
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
         gram_product = gram_matrix(input)
         self.loss = F.mse_loss(gram_product, self.target)
         return input
 
 class Normalization(nn.Module):
-    def __init__(self, mean, std):
+    """
+    Normalizes the input image with mean and standard deviation.
+    """
+    def __init__(self, mean: torch.Tensor, std: torch.Tensor):
         super(Normalization, self).__init__()
         # .view the mean and std to make them [C x 1 x 1] so that they can
         # directly work with image Tensor of shape [B x C x H x W].
@@ -50,14 +69,29 @@ class Normalization(nn.Module):
         self.mean = torch.tensor(mean).view(-1, 1, 1)
         self.std = torch.tensor(std).view(-1, 1, 1)
 
-    def forward(self, img):
+    def forward(self, img: torch.Tensor) -> torch.Tensor:
         # normalize img
         return (img - self.mean) / self.std
 
-def build_model_and_losses(vgg_model, norm_mean, norm_std,
-                               style_img, content_img,
-                               content_layers=['conv_4'],
-                               style_layers=['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']):
+def build_model_and_losses(vgg_model: nn.Module, norm_mean: torch.Tensor, norm_std: torch.Tensor,
+                               style_img: torch.Tensor, content_img: torch.Tensor,
+                               content_layers: List[str] = ['conv_4'],
+                               style_layers: List[str] = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']) -> Tuple[nn.Sequential, List[StyleLoss], List[ContentLoss]]:
+    """
+    Builds the style transfer model and returns the style and content losses.
+    
+    Args:
+        vgg_model (nn.Module): Pre-trained VGG model.
+        norm_mean (torch.Tensor): Normalization mean.
+        norm_std (torch.Tensor): Normalization std.
+        style_img (torch.Tensor): Style image tensor.
+        content_img (torch.Tensor): Content image tensor.
+        content_layers (List[str]): Layers to use for content loss.
+        style_layers (List[str]): Layers to use for style loss.
+        
+    Returns:
+        Tuple[nn.Sequential, List[StyleLoss], List[ContentLoss]]: The model and loss modules.
+    """
     vgg_model = copy.deepcopy(vgg_model)
 
     # normalization module
@@ -113,15 +147,34 @@ def build_model_and_losses(vgg_model, norm_mean, norm_std,
 
     return model, style_losses, content_losses
 
-def create_optimizer(input_img):
+def create_optimizer(input_img: torch.Tensor) -> optim.LBFGS:
+    """
+    Creates an LBFGS optimizer for the input image.
+    """
     # this line to show that input is a parameter that requires a gradient
     optimizer = optim.LBFGS([input_img])
     return optimizer
 
-def perform_style_transfer(vgg_model, norm_mean, norm_std,
-                       content_img, style_img, input_img, num_steps=300,
-                       style_weight=1000000, content_weight=1):
-    """Run the style transfer."""
+def perform_style_transfer(vgg_model: nn.Module, norm_mean: torch.Tensor, norm_std: torch.Tensor,
+                       content_img: torch.Tensor, style_img: torch.Tensor, input_img: torch.Tensor, num_steps: int = 300,
+                       style_weight: int = 1000000, content_weight: int = 1) -> torch.Tensor:
+    """
+    Runs the style transfer optimization loop.
+    
+    Args:
+        vgg_model (nn.Module): Pre-trained VGG model.
+        norm_mean (torch.Tensor): Normalization mean.
+        norm_std (torch.Tensor): Normalization std.
+        content_img (torch.Tensor): Content image tensor.
+        style_img (torch.Tensor): Style image tensor.
+        input_img (torch.Tensor): Input image tensor to optimize.
+        num_steps (int): Number of optimization steps.
+        style_weight (int): Weight for style loss.
+        content_weight (int): Weight for content loss.
+        
+    Returns:
+        torch.Tensor: The optimized input image.
+    """
     print('Building the style transfer model..')
     model, style_losses, content_losses = build_model_and_losses(vgg_model,
         norm_mean, norm_std, style_img, content_img)
