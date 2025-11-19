@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Input and Output directories
+input/
+output/
+
+# Mac OS
+.DS_Store
